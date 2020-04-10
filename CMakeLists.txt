@@ -113,7 +113,8 @@ link_directories(${CATKIN_DEVEL_PREFIX}/lib/ardrone)
 include_directories(${catkin_INCLUDE_DIRS}
                     ${OpenCV_INCLUDE_DIRS}
                     ${Eigen_INCLUDE_DIRS}
-		    ${OCTOMAP_INCLUDE_DIRS})
+		    ${OCTOMAP_INCLUDE_DIRS}
+		    ${ZBar_INCLUDE_DIRS})
 
 # Add Boost_INCLUDE_DIRS
 include_directories(${Boost_INCLUDE_DIRS})
@@ -169,7 +170,7 @@ target_link_libraries(manual_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
 target_link_libraries(opencv_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
-target_link_libraries(pose_estimator ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+target_link_libraries(pose_estimator ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${ZBAR_LIBRARIES}zbar)
 
 target_link_libraries(world_view_interpreter ${roscpp_LIBRARIES} ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
 
