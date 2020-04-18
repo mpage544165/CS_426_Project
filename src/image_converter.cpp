@@ -27,8 +27,6 @@ class ImageConverter
 
   ros::Rate loop_rate = ros::Rate(30);
 
-  
-
   cv::Rect2d roi;
   cv::Ptr<cv::Tracker> tracker = cv::TrackerKCF::create();
 
@@ -149,7 +147,14 @@ public:
       return;
     }
 
-    if(!initialized){
+    bool start_tracking;
+    nh_.getParam("/start_tracking", start_tracking);
+
+    if(start_tracking == false){
+      return;
+    }
+
+    if(initialized == false && start_tracking == true){
         //cap >> frame;
         roi = selectROI("tracker", cv_ptr->image);
 
