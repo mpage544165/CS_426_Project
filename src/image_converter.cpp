@@ -169,10 +169,10 @@ public:
         
 
         // calibrate camera
-        cv::Mat im = cv::imread("ref_image.png");
-        rect = findMarker(im);
-        focalLength = (rect.size.width * KNOWN_DISTANCE) / KNOWN_WIDTH;
-        std::cout << "focalLength: " << focalLength;
+        //cv::Mat im = cv::imread("ref_image.png");
+        //rect = findMarker(im);
+        //focalLength = (rect.size.width * KNOWN_DISTANCE) / KNOWN_WIDTH;
+        //std::cout << "focalLength: " << focalLength;
 
         calibrated = true;
     }
