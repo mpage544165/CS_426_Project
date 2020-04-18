@@ -9,6 +9,8 @@
     <param name="save_octomap" type="bool" value="false" />
 
     <param name="start_tracking" type="bool" value="false" />
+    
+    <param name="start_pose_estimation" type="bool" value="false" />
 
     <!-- ROS Nodes -->
 
