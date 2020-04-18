@@ -71,7 +71,15 @@ class WorldViewInterpreter{
     }
 
     ocTree.insertPointCloud(ocPointCloud, this->sensorOrigin); // update ocTree
-    ocTree.writeBinary("simple_tree.bt"); // save ocTree
+    
+    bool save_octomap;
+    nodeHandle.getParam("/save_octomap", save_octomap);
+
+    if(save_octomap == true){
+      ocTree.writeBinary("simple_tree.bt"); // save ocTree
+      nodeHandle.setParam("/save_octomap", false);
+    }
+    
     //std::cout << "Done" << std::endl;
 
     // populate ros point cloud
@@ -82,8 +90,6 @@ class WorldViewInterpreter{
 
     pointCloudPub.publish(rosPointCloud); // publish ros point cloud
     loop_rate.sleep();
-
-    //rotY++;
   }
 
   // callback function for lidar rotation
