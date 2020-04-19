@@ -22,8 +22,7 @@ class WorldViewInterpreter{
 
   octomap::OcTree ocTree = octomap::OcTree(.1); // create ocTree with resolution .1
   octomap::point3d sensorOrigin = octomap::point3d(0, 0, 0); // the origin of the sensor
-
-  //int rotY = 0;
+  
   float orientation = 0;
 
   public:
@@ -42,6 +41,12 @@ class WorldViewInterpreter{
 
   // callback function for laser scan subscriber
   void laserToPoint(const sensor_msgs::LaserScan::ConstPtr& msg){
+    
+    bool is_reading_LiDAR;
+    nodeHandle.getParam("/is_reading_LiDAR", is_reading_LiDAR);
+
+    if(is_reading_LiDAR == false)
+	      return;
 
     int numLasers = (msg->angle_max - msg->angle_min) / msg->angle_increment;
     std::cout << "numLasers: " << numLasers << std::endl;
@@ -71,7 +76,15 @@ class WorldViewInterpreter{
     }
 
     ocTree.insertPointCloud(ocPointCloud, this->sensorOrigin); // update ocTree
-    ocTree.writeBinary("simple_tree.bt"); // save ocTree
+    
+    bool save_octomap;
+    nodeHandle.getParam("/save_octomap", save_octomap);
+
+    if(save_octomap == true){
+      ocTree.writeBinary("simple_tree.bt"); // save ocTree
+      nodeHandle.setParam("/save_octomap", false);
+    }
+    
     //std::cout << "Done" << std::endl;
 
     // populate ros point cloud
@@ -82,8 +95,6 @@ class WorldViewInterpreter{
 
     pointCloudPub.publish(rosPointCloud); // publish ros point cloud
     loop_rate.sleep();
-
-    //rotY++;
   }
 
   // callback function for lidar rotation
