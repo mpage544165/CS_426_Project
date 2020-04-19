@@ -533,6 +533,13 @@ class PoseEstimator{
 	}
 
 	void image_callback(const sensor_msgs::ImageConstPtr& msg){
+		
+		bool start_pose_estimation;
+                node.getParam("/start_pose_estimation", start_pose_estimation);
+
+                if(start_pose_estimation == false){
+                    return;
+                }
 
   		cv_bridge::CvImagePtr cv_ptr;
   		try
