@@ -7,6 +7,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/tracking.hpp>
+#include <opencv2/features2d.hpp>
 
 static const std::string OPENCV_WINDOW = "Image window";
 
@@ -29,6 +30,7 @@ class ImageConverter
 
   cv::Rect2d roi;
   cv::Ptr<cv::Tracker> tracker = cv::TrackerKCF::create();
+  cv::Ptr<cv::SimpleBlobDetector> detector = cv::SimpleBlobDetector::create();
 
   cv::RotatedRect rect;
   int focalLength; 
@@ -61,7 +63,7 @@ public:
     cv::Mat edges;
     cv::Canny(gray, edges, 35, 125);
 
-    cv::imshow("edges", edges);
+    //cv::imshow("edges", edges);
 
     std::vector<std::vector<cv::Point> > contours;
     std::vector<cv::Vec4i> hierarchy;
@@ -80,6 +82,41 @@ public:
 
     return cv::minAreaRect(contours[index]);
   }
+  
+  float findBlobs(cv::Mat image, cv::Rect2d roi){
+    // Read image
+    //Mat im = imread( "blob.jpg", IMREAD_GRAYSCALE );
+    cv::cvtColor(image, image, CV_BGR2GRAY);
+    
+    // Detect blobs.
+    std::vector<cv::KeyPoint> keypoints;
+    detector->detect(image, keypoints);
+
+    // Draw detected blobs as red circles.
+    // DrawMatchesFlags::DRAW_RICH_KEYPOINTS flag ensures the size of the circle corresponds to the size of blob
+    cv::Mat im_with_keypoints;
+    cv::drawKeypoints(image, keypoints, im_with_keypoints, cv::Scalar(0,0,255), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
+
+    // Show blobs
+    //cv::imshow("keypoints", im_with_keypoints );
+    //cv::waitKey(0);
+    float radius = 0;
+
+    for(int i = 0; i < keypoints.size(); i++){
+
+        if(sqrt(pow(keypoints[i].pt.x - (roi.x + ((float)roi.width / 2.0)), 2) 
+              + pow(keypoints[i].pt.y - (roi.y + ((float)roi.height / 2.0)), 2)) < 50){
+
+            radius = keypoints[i].size / 2.0;
+
+            cv::circle(im_with_keypoints, cv::Point(keypoints[i].pt.x, keypoints[i].pt.y), radius, cv::Scalar(0,255,0), 2.0); 
+        }
+    }
+
+    cv::imshow("blobs", im_with_keypoints);
+
+    return 3.1415 * (pow(radius / 2.0, 2)); //im_with_keypoints;
+  }
 
   int distanceToCamera(int knownWidth, int focalLength, int perWidth){
     try{
@@ -90,7 +127,7 @@ public:
     }
   }
 
-  void updateOrientation(cv::Mat image, cv::Rect2d rect, int distance){
+  void updateOrientation(cv::Mat image, cv::Rect2d rect, float area){
     int center_x = rect.x + (rect.width / 2);
     int image_center_x = image.size().width / 2;
 
@@ -101,15 +138,15 @@ public:
     }
 
     else if(center_x > image_center_x){
-        msg.angular.z = -0.5;
+        msg.angular.z = -0.4;
     }
 
     else if(center_x < image_center_x){
-        msg.angular.z = 0.5;
+        msg.angular.z = 0.4;
     }
 
-    if(distance > 250){
-        msg.linear.x = 0.5;    
+    if(area < 500){
+        msg.linear.x = 0.4;    
     }
     else{
         msg.linear.x = 0;
@@ -123,7 +160,7 @@ public:
 
     geometry_msgs::Twist msg;
 
-    if(distance > 200){
+    if(distance < 50){
         msg.linear.x = 1.0;    
     }
     else{
@@ -183,30 +220,32 @@ public:
     // display distance
     std::stringstream ss;
     ss << inches;
-    putText(cv_ptr->image, ss.str() + " inches", cv::Point(20, 60), 
-               cv::FONT_HERSHEY_SIMPLEX, 2, cv::Scalar(255, 0, 0));
+    //putText(cv_ptr->image, ss.str() + " inches", cv::Point(20, 60), 
+    //           cv::FONT_HERSHEY_SIMPLEX, 2, cv::Scalar(255, 0, 0));
 
     cv::rectangle(cv_ptr->image, rect.boundingRect(), cv::Scalar( 0, 255, 0 ), 2, 1 );
 
     //updatePosition(inches);
 
-    cv::imshow("image", cv_ptr->image);
+    //cv::imshow("image", cv_ptr->image);
 
     // update the tracking result
     tracker->update(cv_ptr->image, roi);
+    
+    float area = findBlobs(cv_ptr->image, roi);
 
     // draw the tracked object
     cv::rectangle(cv_ptr->image, roi, cv::Scalar( 255, 0, 0 ), 2, 1 );
 
-    updateOrientation(cv_ptr->image, roi, inches);
-
+    updateOrientation(cv_ptr->image, roi, area);
     
+    //cv::imshow("blobs", blobImage);
 
     // show image with the tracked object
     //imshow("tracker", cv_ptr->image);
 
     // Update GUI Window
-    cv::imshow(OPENCV_WINDOW, cv_ptr->image);
+    //cv::imshow(OPENCV_WINDOW, cv_ptr->image);
     cv::waitKey(3);
 
     // Output modified video stream
