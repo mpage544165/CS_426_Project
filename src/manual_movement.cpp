@@ -3,38 +3,16 @@
 // Started 2/15/20
 
 /*
-Note: to test this file, run the following: 
-  Terminal 1:
-    source /opt/ros/kinetic/setup.bash && source devel/setup.bash
-    catkin_make && roscore
+  Note: to test this file, run the following: 
+    Terminal 1: Setting up the ROS environment
+      cd catkin_ws/catkin_ws_AR
+      source /opt/ros/kinetic/setup.bash && source devel/setup.bash && catkin_make && roscore
 
-  Terminal 2:
-      source /opt/ros/kinetic/setup.bash && source devel/setup.bash && roslaunch cvg_sim_gazebo ardrone_testworld.launch
-  
-  Terminal 3:
-      source /opt/ros/kinetic/setup.bash && source devel/setup.bash && rosrun ardrone_autonomy manual_node
-
-
-
-  Notes: Physical Drone Flight and Testing
-
-    roslaunch drone_application launch_drone.launch
-
-    rosrun image_view image_view image:=/ardrone/image_raw
-
-    rostopic pub -1 ardrone/takeoff std_msgs/Empty
-    rostopic pub -1 ardrone/land std_msgs/Empty
-
-    source /opt/ros/kinetic/setup.bash && source devel/setup.bash && rostopic pub -1 ardrone/takeoff std_msgs/Empty
-
-
-
-    roslaunch pid servo_sim.launch
-
-    rosrun pid autotune
-
-    rosrun rqt_gui rqt_gui
-
+    Terminal 2: Opening up Gazebo
+        source /opt/ros/kinetic/setup.bash && source devel/setup.bash && roslaunch cvg_sim_gazebo ardrone_box.launch
+    
+    Terminal 3: Running the autonomy node
+        source /opt/ros/kinetic/setup.bash && source devel/setup.bash && rosrun ardrone_autonomy manual_node
 
 */
 
@@ -44,9 +22,11 @@ Note: to test this file, run the following:
 #include <stdio.h>
 #include <signal.h>
 #include "std_msgs/Empty.h"
+#include "ardrone_autonomy/Navdata.h"
 
 class ManualMovement{
 
+public:
   ros::NodeHandle nodeHandler;
   ros::Subscriber movementSub;
 
@@ -54,17 +34,22 @@ class ManualMovement{
   ros::Publisher liftoffPublisher;
   ros::Publisher landingPublisher;
 
+  ros::Subscriber currentPosSub;
+
   struct termios cooked, raw;
 
-  public:
-   
+  float xPos = 0.0f;
+  float yPos = 0.0f;
+  float zPos = 0.0f;
+
+  ros::Rate loop_rate = ros::Rate(30);
+  
   /**
     * @desc Initializes a ManualMovement Object.
     * @return void
   */
     ManualMovement(){
-      // allows access to 'listen to' the cmd_vel node, which tracks the current Linear and Angular Velocity
-      movementSub = nodeHandler.subscribe("cmd_vel", 100, &ManualMovement::inputChecker, this);
+
       // allows the ability to edit the cmd_vel node
       velocityPublisher = nodeHandler.advertise<geometry_msgs::Twist>("cmd_vel", 1);
       // allows the ability to edit the std_msgs node
@@ -72,20 +57,21 @@ class ManualMovement{
       //alows ability to edit the std_msgs node
       landingPublisher = nodeHandler.advertise<std_msgs::Empty>("/ardrone/land", 1);
 
+      std::cout << std::cout << "BEFORE NAVDATA SUBSCRIBER" << std::endl;
+      currentPosSub = nodeHandler.subscribe( "/ardrone/navdata", 100, &ManualMovement::posChecker, this);
+      std::cout << "AFTER NAVDATA SUBSCRIBER" << std::endl << std::endl;
     }
 
-  /**
-    * @desc This function verifies the current linear velocity of the drone
-    * @param geometry_msgs::Twist::ConstPtr& msg
-    * @return void
-  */
-  void inputChecker(const geometry_msgs::Twist::ConstPtr& msg){ 
-    double xVal = msg->linear.x;
-    double yVal = msg->linear.y;
-    double zVal = msg->linear.z;
-    
-    ROS_INFO("x: %f,  y: %f, z: %f", xVal, yVal, zVal);
+  void posChecker(const ardrone_autonomy::Navdata::ConstPtr& posMsg){
+    std::cout << "BEGINNING OF POSCHECKER" << std::endl;
+    xPos = posMsg->vx;
+    yPos = posMsg->vy;
+    zPos = posMsg->vz;
+
+    std::cout << "position values are: " << xPos << " " << yPos << " " << zPos << std::endl;
+    std::cout << "END OF POSCHECKER" << std::endl;
   }
+
 
   /**
     * @desc sets the drone's linear and angular velocity and publishes it
@@ -96,6 +82,7 @@ class ManualMovement{
     * @return void
   */
     void move(geometry_msgs::Twist msg, int Lx, int Ly, int Lz, int Ax, int Ay, int Az){
+      
       msg.linear.x = Lx;
       msg.linear.y = Ly;
       msg.linear.z = Lz;
@@ -107,6 +94,7 @@ class ManualMovement{
         // set a range of velocity speeds between a minimum and ma
 
       velocityPublisher.publish(msg);
+      loop_rate.sleep();
     }
 
   /**
@@ -118,9 +106,11 @@ class ManualMovement{
     void LiftAndLandProcedure(bool isLift, std_msgs::Empty msg){
       if(isLift){ //we are enacting a liftoff proceddure
         liftoffPublisher.publish(msg);
+        loop_rate.sleep();
       }
       else{ //we are enacting a Landing Procedure
         landingPublisher.publish(msg);
+        loop_rate.sleep();
       }
     }
 
@@ -175,66 +165,65 @@ class ManualMovement{
           exit(-1);
         }
 
-      // move drone based upon the key recorded
-      switch(key){
-        case 'h': // Help
-          std::cout << " ==== Control Scheme ==== " << std::endl;
-          std::cout << " |l| - Liftoff " << std::endl;
-          std::cout << " |k| - Land " << std::endl;
-          std::cout << " |w| - Move Forward " << std::endl;
-          std::cout << " |s| - Move Backward " << std::endl;
-          std::cout << " |a| - Move Left " << std::endl;
-          std::cout << " |d| - Move Right " << std::endl;
-          std::cout << " |r| - Increase Height " << std::endl;
-          std::cout << " |f| - Decrease Height " << std::endl;
-          std::cout << " |q| - Spin Left " << std::endl;
-          std::cout << " |e| - Spin Right " << std::endl;
-          std::cout << " |x| - Halt Movement " << std::endl << std::endl;
+        // move drone based upon the key recorded
+        switch(key){
+          case 'h': // Help
+            std::cout << " ==== Control Scheme ==== " << std::endl;
+            std::cout << " |l| - Liftoff " << std::endl;
+            std::cout << " |k| - Land " << std::endl;
+            std::cout << " |w| - Move Forward " << std::endl;
+            std::cout << " |s| - Move Backward " << std::endl;
+            std::cout << " |a| - Move Left " << std::endl;
+            std::cout << " |d| - Move Right " << std::endl;
+            std::cout << " |r| - Increase Height " << std::endl;
+            std::cout << " |f| - Decrease Height " << std::endl;
+            std::cout << " |q| - Spin Left " << std::endl;
+            std::cout << " |e| - Spin Right " << std::endl;
+            std::cout << " |x| - Halt Movement " << std::endl << std::endl;
 
-          std::cout << "Ready to Recieve Input..." << std::endl;
-          std::cout << "Press 'h' for help" << std::endl;
-          break;
+            std::cout << "Ready to Recieve Input..." << std::endl;
+            std::cout << "Press 'h' for help" << std::endl;
+            break;
 
-        case 'l': // lisftoff
-          LiftAndLandProcedure(true, Lmsg); //set liftoff command
-          break;
-        case 'k': // land
-          LiftAndLandProcedure(false, Lmsg); //set land command
-          break;
-        case 'w': //forward
-          move(msg, 10, 0, 0, 0, 0, 0);
-          break;
-        case 's': //backward
-          move(msg, -10, 0, 0, 0, 0, 0);
-          break;
-        case 'a': //left
-          move(msg, 0, 10, 0, 0, 0, 0);
-          break;
-        case 'd': //right
-          move(msg, 0, -10, 0, 0, 0, 0);
-          break;
-        case 'r': //elevate
-          move(msg, 0, 0, 10, 0, 0, 0);
-          break;
-        case 'f': //decend
-          move(msg, 0, 0, -10, 0, 0, 0);
-          break;
-        case 'q': //rotate left
-          move(msg, 0, 0, 0, 0, 0, 10);
-          break;
-        case 'e': // rotate right:
-          move(msg, 0, 0, 0, 0, 0, -10);
-          break;
-        case 'x': //stop movement
-          move(msg, 0, 0, 0, 0, 0, 0);
-          break;
+          case 'l': // lisftoff
+            LiftAndLandProcedure(true, Lmsg); //set liftoff command
+            break;
+          case 'k': // land
+            LiftAndLandProcedure(false, Lmsg); //set land command
+            break;
+          case 'w': //forward
+            move(msg, 5, 0, 0, 0, 0, 0);
+            break;
+          case 's': //backward
+            move(msg, -5, 0, 0, 0, 0, 0);
+            break;
+          case 'a': //left
+            move(msg, 0, 5, 0, 0, 0, 0);
+            break;
+          case 'd': //right
+            move(msg, 0, -5, 0, 0, 0, 0);
+            break;
+          case 'r': //elevate
+            move(msg, 0, 0, 5, 0, 0, 0);
+            break;
+          case 'f': //decend
+            move(msg, 0, 0, -5, 0, 0, 0);
+            break;
+          case 'q': //rotate left
+            move(msg, 0, 0, 0, 0, 0, 5);
+            break;
+          case 'e': // rotate right:
+            move(msg, 0, 0, 0, 0, 0, -5);
+            break;
+          case 'x': //stop movement
+            move(msg, 0, 0, 0, 0, 0, 0);
+            break;
+        }
       }
-
-      // if(!verifySafePosition()){
+      if(!VerifySafePosition()){
+        move(msg, 0, 0, 0, 0, 0, 0);
         // EmergencyHalt();
-      // }
-
-    }
+      }
     return;
   }
 
@@ -244,7 +233,19 @@ class ManualMovement{
     * @return bool - success or failure
   */
   bool VerifySafePosition(){
-    //TODO
+   // ROS_INFO("x: %f", xPos);
+    if((xPos > 100) || (xPos < (-100))){
+      return false;
+    }
+    else if((yPos > 100) || (yPos < (-100))){
+      return false;
+    }
+    else if((zPos > 100) || (zPos < (-100))){
+      return false;
+    }
+    else{
+      return true;
+    }
   }
 
   /**
