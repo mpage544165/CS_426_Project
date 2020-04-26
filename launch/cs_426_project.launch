@@ -2,7 +2,7 @@
 
     <!-- ROS Parameters -->
 
-    <param name="autonomous_movement" type="bool" value="true" />
+    <param name="autonomous_movement" type="bool" value="false" />
 
     <param name="is_reading_LiDAR" type="bool" value="true" />
 
