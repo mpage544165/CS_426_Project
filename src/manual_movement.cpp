@@ -22,8 +22,12 @@
 #include <stdio.h>
 #include <signal.h>
 #include "std_msgs/Empty.h"
+<<<<<<< HEAD
 #include <nav_msgs/Odometry.h>
 #include "fcntl.h"
+=======
+#include "ardrone_autonomy/Navdata.h"
+>>>>>>> 802cf067dbb9727ad4b5f71b5ceb0272a4d8dd64
 
 class ManualMovement{
 
@@ -39,7 +43,10 @@ public:
 
   struct termios cooked, raw;
 
+<<<<<<< HEAD
   //These 3 values represent the current position of the drone
+=======
+>>>>>>> 802cf067dbb9727ad4b5f71b5ceb0272a4d8dd64
   float xPos = 0.0f;
   float yPos = 0.0f;
   float zPos = 0.0f;
@@ -48,6 +55,7 @@ public:
   
   /**
     * @desc Initializes a ManualMovement Object.
+<<<<<<< HEAD
     * @note ManualMovement Object has the ability to get drone position, launch a drone, 
     *   land a drone, and move a drone
     * @return void
@@ -111,6 +119,32 @@ public:
         Keyboard(key, xPos, yPos, zPos, Tmsg, Lmsg);
       }
     }
+=======
+    * @return void
+  */
+    ManualMovement(){
+
+      // allows the ability to edit the cmd_vel node
+      velocityPublisher = nodeHandler.advertise<geometry_msgs::Twist>("cmd_vel", 1);
+      // allows the ability to edit the std_msgs node
+      liftoffPublisher = nodeHandler.advertise<std_msgs::Empty>("/ardrone/takeoff", 1);
+      //alows ability to edit the std_msgs node
+      landingPublisher = nodeHandler.advertise<std_msgs::Empty>("/ardrone/land", 1);
+
+      std::cout << std::cout << "BEFORE NAVDATA SUBSCRIBER" << std::endl;
+      currentPosSub = nodeHandler.subscribe( "/ardrone/navdata", 100, &ManualMovement::posChecker, this);
+      std::cout << "AFTER NAVDATA SUBSCRIBER" << std::endl << std::endl;
+    }
+
+  void posChecker(const ardrone_autonomy::Navdata::ConstPtr& posMsg){
+    std::cout << "BEGINNING OF POSCHECKER" << std::endl;
+    xPos = posMsg->vx;
+    yPos = posMsg->vy;
+    zPos = posMsg->vz;
+
+    std::cout << "position values are: " << xPos << " " << yPos << " " << zPos << std::endl;
+    std::cout << "END OF POSCHECKER" << std::endl;
+>>>>>>> 802cf067dbb9727ad4b5f71b5ceb0272a4d8dd64
   }
 
 
@@ -176,6 +210,10 @@ public:
       raw.c_cc[VEOL] = 1;
       raw.c_cc[VEOF] = 2;
       tcsetattr(0, TCSANOW, &raw); // set new terminal settings
+<<<<<<< HEAD
+=======
+
+>>>>>>> 802cf067dbb9727ad4b5f71b5ceb0272a4d8dd64
       return true;
     }
 
@@ -184,6 +222,7 @@ public:
       * @param string $msg - the message to be displayed
       * @return bool - success or failure
     */
+<<<<<<< HEAD
     void Keyboard(char key, float xpos, float ypos, float zpos, geometry_msgs::Twist msg, std_msgs::Empty Lmsg){
       switch(key){
         case 'h': // Help
@@ -273,12 +312,97 @@ public:
       move(msg, 0, 0, 0, 0, 0, 0); // one second has elapsed, halt the drone
       
     }
+=======
+    void Keyboard(){
+      char key;
+      geometry_msgs::Twist msg;
+      std_msgs::Empty Lmsg;
+
+      if(PrepTerminal()){ // if terminal is set in raw mode
+        std::cout << "Ready to Recieve Input..." << std::endl;
+        std::cout << "Press 'h' for help" << std::endl;
+      }
+
+      else{ // terminal was unable to be set for raw mode
+        perror("Unable to prepare the terminal for input");
+        exit(-1);
+      }
+
+      while(true){
+        if(read(0, &key, 1) < 0){ // take next incoming input
+          perror("Unable to recieve input");
+          exit(-1);
+        }
+
+        // move drone based upon the key recorded
+        switch(key){
+          case 'h': // Help
+            std::cout << " ==== Control Scheme ==== " << std::endl;
+            std::cout << " |l| - Liftoff " << std::endl;
+            std::cout << " |k| - Land " << std::endl;
+            std::cout << " |w| - Move Forward " << std::endl;
+            std::cout << " |s| - Move Backward " << std::endl;
+            std::cout << " |a| - Move Left " << std::endl;
+            std::cout << " |d| - Move Right " << std::endl;
+            std::cout << " |r| - Increase Height " << std::endl;
+            std::cout << " |f| - Decrease Height " << std::endl;
+            std::cout << " |q| - Spin Left " << std::endl;
+            std::cout << " |e| - Spin Right " << std::endl;
+            std::cout << " |x| - Halt Movement " << std::endl << std::endl;
+
+            std::cout << "Ready to Recieve Input..." << std::endl;
+            std::cout << "Press 'h' for help" << std::endl;
+            break;
+
+          case 'l': // lisftoff
+            LiftAndLandProcedure(true, Lmsg); //set liftoff command
+            break;
+          case 'k': // land
+            LiftAndLandProcedure(false, Lmsg); //set land command
+            break;
+          case 'w': //forward
+            move(msg, 5, 0, 0, 0, 0, 0);
+            break;
+          case 's': //backward
+            move(msg, -5, 0, 0, 0, 0, 0);
+            break;
+          case 'a': //left
+            move(msg, 0, 5, 0, 0, 0, 0);
+            break;
+          case 'd': //right
+            move(msg, 0, -5, 0, 0, 0, 0);
+            break;
+          case 'r': //elevate
+            move(msg, 0, 0, 5, 0, 0, 0);
+            break;
+          case 'f': //decend
+            move(msg, 0, 0, -5, 0, 0, 0);
+            break;
+          case 'q': //rotate left
+            move(msg, 0, 0, 0, 0, 0, 5);
+            break;
+          case 'e': // rotate right:
+            move(msg, 0, 0, 0, 0, 0, -5);
+            break;
+          case 'x': //stop movement
+            move(msg, 0, 0, 0, 0, 0, 0);
+            break;
+        }
+      }
+      if(!VerifySafePosition()){
+        move(msg, 0, 0, 0, 0, 0, 0);
+        // EmergencyHalt();
+      }
+    return;
+  }
+>>>>>>> 802cf067dbb9727ad4b5f71b5ceb0272a4d8dd64
 
   /**
     * @desc Compares current position compared to the nearest physical object. If object is 
     *     within a certain distance, the drone automatically halts all movement
     * @return bool - success or failure
   */
+<<<<<<< HEAD
   int VerifySafePosition(float xP, float yP, float zP){
    // ROS_INFO("x: %f", xPos);
     if(xP > 10){ // drone is too far forward
@@ -300,6 +424,21 @@ public:
 
     else{
       return 0;
+=======
+  bool VerifySafePosition(){
+   // ROS_INFO("x: %f", xPos);
+    if((xPos > 100) || (xPos < (-100))){
+      return false;
+    }
+    else if((yPos > 100) || (yPos < (-100))){
+      return false;
+    }
+    else if((zPos > 100) || (zPos < (-100))){
+      return false;
+    }
+    else{
+      return true;
+>>>>>>> 802cf067dbb9727ad4b5f71b5ceb0272a4d8dd64
     }
   }
 
@@ -317,6 +456,10 @@ int main(int argc, char** argv)
 {
   ros::init(argc, argv, "manual_move");
   ManualMovement manmove;
+<<<<<<< HEAD
+=======
+  manmove.Keyboard();
+>>>>>>> 802cf067dbb9727ad4b5f71b5ceb0272a4d8dd64
   ros::spin();
   return 0;
 }

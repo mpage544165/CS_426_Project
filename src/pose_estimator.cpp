@@ -600,4 +600,10 @@ int main(int argc, char** argv) {
   ros::spin();
 
   return 0;
+<<<<<<< HEAD
 }
+=======
+}
+
+
+>>>>>>> 802cf067dbb9727ad4b5f71b5ceb0272a4d8dd64
