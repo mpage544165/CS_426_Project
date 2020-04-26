@@ -2,19 +2,19 @@
 
     <!-- ROS Parameters -->
 
-    <param name="autonomous_movement" type="bool" value="false" />
+    <param name="autonomous_movement" type="bool" value="true" />
 
-    <param name="is_reading_LiDAR" type="bool" value="false" />
+    <param name="is_reading_LiDAR" type="bool" value="true" />
 
-    <param name="save_octomap" type="bool" value="false" />
+    <param name="save_octomap" type="bool" value="true" />
 
-    <param name="start_tracking" type="bool" value="false" />
+    <param name="start_tracking" type="bool" value="true" />
     
-    <param name="start_pose_estimation" type="bool" value="false" />
+    <param name="start_pose_estimation" type="bool" value="true" />
 
     <!-- ROS Nodes -->
 
-    <node name="manual_movement" pkg="ardrone_autonomy" type="manual_node" respawn="true" />
+    <node name="manual_movement" pkg="ardrone_autonomy" type="manual_node" respawn="true"/>
 
     <node name="pose_estimator" pkg="ardrone_autonomy" type="pose_estimator" respawn="true" />
 

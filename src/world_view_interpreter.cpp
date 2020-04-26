@@ -5,6 +5,7 @@
 #include "sensor_msgs/PointCloud.h"
 #include "geometry_msgs/Point32.h"
 #include "std_msgs/Float32.h"
+#include <nav_msgs/Odometry.h>
 
 #include <octomap/octomap.h>
 #include <octomap/OcTree.h>
@@ -17,6 +18,7 @@ class WorldViewInterpreter{
   ros::NodeHandle nodeHandle;
   ros::Subscriber laserSub;
   ros::Subscriber lidarOrientationSub;
+  ros::Subscriber navDataSub;
   ros::Publisher pointCloudPub;
   ros::Rate loop_rate = ros::Rate(30);
 
@@ -24,6 +26,9 @@ class WorldViewInterpreter{
   octomap::point3d sensorOrigin = octomap::point3d(0, 0, 0); // the origin of the sensor
   
   float orientation = 0;
+  float x = 0;
+  float y = 0;
+  float z = 0;
 
   public:
 
@@ -35,6 +40,8 @@ class WorldViewInterpreter{
     // initialize subsriber to lidar orientation
     lidarOrientationSub = nodeHandle.subscribe("/laser_publisher/lidar_orientation", 100, &WorldViewInterpreter::onRotation, this);
 
+    navDataSub = nodeHandle.subscribe("/ground_truth/state", 100, &WorldViewInterpreter::onPosUpdate, this);
+	  
     // publish point cloud
     pointCloudPub = nodeHandle.advertise<sensor_msgs::PointCloud>("/point_cloud", 1);
   }
@@ -101,20 +108,26 @@ class WorldViewInterpreter{
   void onRotation(const std_msgs::Float32ConstPtr& msg){
     this->orientation = msg->data;
   }
+	
+  void onPosUpdate(const nav_msgs::OdometryConstPtr& msg){
+    this->x = msg->pose.pose.position.x;
+    this->y = msg->pose.pose.position.y;
+    this->z = msg->pose.pose.position.z;
+  }
 
   // get x coordinate
   float getX(float distance, float horizontalAngle, float verticalAngle){
-    return distance * sin(verticalAngle) * cos(horizontalAngle); 
+    return distance * sin(verticalAngle) * cos(horizontalAngle) + this->x; 
   }
 
   // get y coordinate
   float getY(float distance, float horizontalAngle, float verticalAngle){
-    return distance * sin(verticalAngle) * sin(horizontalAngle);
+    return distance * sin(verticalAngle) * sin(horizontalAngle) + this->y;
   }
 
   // get z coordinate
   float getZ(float distance, float verticalAngle){
-    return distance * cos(verticalAngle);
+    return distance * cos(verticalAngle) + this->z;
   }
   
 };

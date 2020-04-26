@@ -172,7 +172,6 @@ class PoseEstimator{
 	if ( (P.real() <= 0.00001 && P.real() > 0) && (P.imag() <= 0.00001 && P.imag() > 0)) {
 		P = sqrt(cubicSolutions(2));
 	}
-
 	std::complex<double> Q = sqrt(cubicSolutions(1));
 	if ((Q.real() <= 0.0001 && Q.real() > 0) && (Q.imag() <= 0.0001 && Q.imag() > 0)) {
 		Q = sqrt(cubicSolutions(2));
@@ -602,4 +601,3 @@ int main(int argc, char** argv) {
 
   return 0;
 }
-

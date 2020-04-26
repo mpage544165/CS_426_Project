@@ -144,6 +144,8 @@ add_compile_options(-std=c++11)
 # Build executable
 add_executable(ardrone_driver ${AA_SOURCES})
 
+add_executable(manual_node src/manual_movement.cpp)
+
 add_executable(opencv_node src/image_converter.cpp)
 
 add_executable(pose_estimator src/pose_estimator.cpp)
@@ -163,6 +165,8 @@ target_link_libraries(
     ${catkin_LIBRARIES}
     #${OpenCV_LIBs}
 )
+
+target_link_libraries(manual_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
 target_link_libraries(opencv_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 

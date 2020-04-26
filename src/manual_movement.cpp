@@ -22,7 +22,8 @@
 #include <stdio.h>
 #include <signal.h>
 #include "std_msgs/Empty.h"
-#include "ardrone_autonomy/Navdata.h"
+#include <nav_msgs/Odometry.h>
+#include "fcntl.h"
 
 class ManualMovement{
 
@@ -38,6 +39,7 @@ public:
 
   struct termios cooked, raw;
 
+  //These 3 values represent the current position of the drone
   float xPos = 0.0f;
   float yPos = 0.0f;
   float zPos = 0.0f;
@@ -46,30 +48,69 @@ public:
   
   /**
     * @desc Initializes a ManualMovement Object.
+    * @note ManualMovement Object has the ability to get drone position, launch a drone, 
+    *   land a drone, and move a drone
     * @return void
   */
     ManualMovement(){
-
-      // allows the ability to edit the cmd_vel node
+      // allows the ability to edit the cmd_vel node and change drone velocity
       velocityPublisher = nodeHandler.advertise<geometry_msgs::Twist>("cmd_vel", 1);
-      // allows the ability to edit the std_msgs node
+      // allows the ability to edit the std_msgs node and launch the drone
       liftoffPublisher = nodeHandler.advertise<std_msgs::Empty>("/ardrone/takeoff", 1);
-      //alows ability to edit the std_msgs node
+      //alows ability to edit the std_msgs node and  land the drone
       landingPublisher = nodeHandler.advertise<std_msgs::Empty>("/ardrone/land", 1);
-
-      std::cout << std::cout << "BEFORE NAVDATA SUBSCRIBER" << std::endl;
-      currentPosSub = nodeHandler.subscribe( "/ardrone/navdata", 100, &ManualMovement::posChecker, this);
-      std::cout << "AFTER NAVDATA SUBSCRIBER" << std::endl << std::endl;
+      // topic used to get drone's current position
+      currentPosSub = nodeHandler.subscribe("/ground_truth/state", 100, &ManualMovement::posChecker, this);
     }
 
-  void posChecker(const ardrone_autonomy::Navdata::ConstPtr& posMsg){
-    std::cout << "BEGINNING OF POSCHECKER" << std::endl;
-    xPos = posMsg->vx;
-    yPos = posMsg->vy;
-    zPos = posMsg->vz;
+  /**
+    * @desc moves the drone's position in the environment. It starts by checking the drone is in a safe position, then 
+    *   reading in keyboard input to change drone velocity
+    * @param const nav_msgs::OdometryConstPtr& msg - represennts the appropriate message type that is used to access the
+    *     drone's current positino
+    * @return void
+  */
+  void posChecker(const nav_msgs::OdometryConstPtr& msg){
+    //declare variables, set the current drone position
+    geometry_msgs::Twist Tmsg;
+    std_msgs::Empty Lmsg;
+    xPos = msg->pose.pose.position.x;
+    yPos = msg->pose.pose.position.y;
+    zPos = msg->pose.pose.position.z;
+    std::cout << "POS VALUES-- X: " << xPos << " Y: " << yPos << " Z: " << zPos << std::endl;
 
-    std::cout << "position values are: " << xPos << " " << yPos << " " << zPos << std::endl;
-    std::cout << "END OF POSCHECKER" << std::endl;
+    // using current drone position, verify that drone is still within its allowed flyable boundry
+    int currentDroneState = VerifySafePosition(xPos, yPos, zPos);
+    if(currentDroneState != 0){ // if VerifySafePosition returns a value, this means the drone has crossed a boundry!
+      // drone is in an unsafe position! Halt all current movement and call ReverseFromBoundry
+      move(Tmsg, 0, 0, 0, 0, 0, 0);
+      ReverseFromBoundry(currentDroneState, Tmsg);
+    }
+
+    //otherwise, the drone is in a safe position and we are free to search for key presses
+    else{
+      if(PrepTerminal()){ // if terminal is set in raw mode
+        std::cout << "Ready to Recieve Input..." << std::endl;
+        std::cout << "Press 'h' for help" << std::endl;
+      }
+
+      else{ // terminal was unable to be set for raw mode
+        perror("Unable to prepare the terminal for input");
+        exit(-1);
+      }
+      char key; // hold the current key press
+      int flags = fcntl(0, F_GETFL, 0); /* get current file status flags */
+      flags |= O_NONBLOCK;          /* turn off blocking flag */
+      fcntl(0, F_SETFL, flags);         /* set up non-blocking read */
+      if(read(0, &key, 1) < 0){ // take next incoming input
+        perror("Unable to recieve input");
+        exit(-1);
+      }
+      //if a key was successfully recorded, call Keyboard()
+      else{
+        Keyboard(key, xPos, yPos, zPos, Tmsg, Lmsg);
+      }
+    }
   }
 
 
@@ -135,7 +176,6 @@ public:
       raw.c_cc[VEOL] = 1;
       raw.c_cc[VEOF] = 2;
       tcsetattr(0, TCSANOW, &raw); // set new terminal settings
-
       return true;
     }
 
@@ -144,107 +184,122 @@ public:
       * @param string $msg - the message to be displayed
       * @return bool - success or failure
     */
-    void Keyboard(){
-      char key;
-      geometry_msgs::Twist msg;
-      std_msgs::Empty Lmsg;
+    void Keyboard(char key, float xpos, float ypos, float zpos, geometry_msgs::Twist msg, std_msgs::Empty Lmsg){
+      switch(key){
+        case 'h': // Help
+          std::cout << " ==== Control Scheme ==== " << std::endl;
+          std::cout << " |l| - Liftoff " << std::endl;
+          std::cout << " |k| - Land " << std::endl;
+          std::cout << " |w| - Move Forward " << std::endl;
+          std::cout << " |s| - Move Backward " << std::endl;
+          std::cout << " |a| - Move Left " << std::endl;
+          std::cout << " |d| - Move Right " << std::endl;
+          std::cout << " |r| - Increase Height " << std::endl;
+          std::cout << " |f| - Decrease Height " << std::endl;
+          std::cout << " |q| - Spin Left " << std::endl;
+          std::cout << " |e| - Spin Right " << std::endl;
+          std::cout << " |x| - Halt Movement " << std::endl << std::endl;
 
-      if(PrepTerminal()){ // if terminal is set in raw mode
-        std::cout << "Ready to Recieve Input..." << std::endl;
-        std::cout << "Press 'h' for help" << std::endl;
-      }
+          std::cout << "Ready to Recieve Input..." << std::endl;
+          std::cout << "Press 'h' for help" << std::endl;
+          break;
 
-      else{ // terminal was unable to be set for raw mode
-        perror("Unable to prepare the terminal for input");
-        exit(-1);
-      }
-
-      while(true){
-        if(read(0, &key, 1) < 0){ // take next incoming input
-          perror("Unable to recieve input");
-          exit(-1);
-        }
-
-        // move drone based upon the key recorded
-        switch(key){
-          case 'h': // Help
-            std::cout << " ==== Control Scheme ==== " << std::endl;
-            std::cout << " |l| - Liftoff " << std::endl;
-            std::cout << " |k| - Land " << std::endl;
-            std::cout << " |w| - Move Forward " << std::endl;
-            std::cout << " |s| - Move Backward " << std::endl;
-            std::cout << " |a| - Move Left " << std::endl;
-            std::cout << " |d| - Move Right " << std::endl;
-            std::cout << " |r| - Increase Height " << std::endl;
-            std::cout << " |f| - Decrease Height " << std::endl;
-            std::cout << " |q| - Spin Left " << std::endl;
-            std::cout << " |e| - Spin Right " << std::endl;
-            std::cout << " |x| - Halt Movement " << std::endl << std::endl;
-
-            std::cout << "Ready to Recieve Input..." << std::endl;
-            std::cout << "Press 'h' for help" << std::endl;
-            break;
-
-          case 'l': // lisftoff
-            LiftAndLandProcedure(true, Lmsg); //set liftoff command
-            break;
-          case 'k': // land
-            LiftAndLandProcedure(false, Lmsg); //set land command
-            break;
-          case 'w': //forward
-            move(msg, 5, 0, 0, 0, 0, 0);
-            break;
-          case 's': //backward
-            move(msg, -5, 0, 0, 0, 0, 0);
-            break;
-          case 'a': //left
-            move(msg, 0, 5, 0, 0, 0, 0);
-            break;
-          case 'd': //right
-            move(msg, 0, -5, 0, 0, 0, 0);
-            break;
-          case 'r': //elevate
-            move(msg, 0, 0, 5, 0, 0, 0);
-            break;
-          case 'f': //decend
-            move(msg, 0, 0, -5, 0, 0, 0);
-            break;
-          case 'q': //rotate left
-            move(msg, 0, 0, 0, 0, 0, 5);
-            break;
-          case 'e': // rotate right:
-            move(msg, 0, 0, 0, 0, 0, -5);
-            break;
-          case 'x': //stop movement
-            move(msg, 0, 0, 0, 0, 0, 0);
-            break;
-        }
-      }
-      if(!VerifySafePosition()){
-        move(msg, 0, 0, 0, 0, 0, 0);
-        // EmergencyHalt();
+        case 'l': // lisftoff
+          LiftAndLandProcedure(true, Lmsg); //set liftoff command
+          break;
+        case 'k': // land
+          LiftAndLandProcedure(false, Lmsg); //set land command
+          break;
+        case 'w': //forward
+          move(msg, 5, 0, 0, 0, 0, 0);
+          break;
+        case 's': //backward
+          move(msg, -5, 0, 0, 0, 0, 0);
+          break;
+        case 'a': //left
+          move(msg, 0, 5, 0, 0, 0, 0);
+          break;
+        case 'd': //right
+          move(msg, 0, -5, 0, 0, 0, 0);
+          break;
+        case 'r': //elevate
+          move(msg, 0, 0, 5, 0, 0, 0);
+          break;
+        case 'f': //decend
+          move(msg, 0, 0, -5, 0, 0, 0);
+          break;
+        case 'q': //rotate left
+          move(msg, 0, 0, 0, 0, 0, 5);
+          break;
+        case 'e': // rotate right:
+          move(msg, 0, 0, 0, 0, 0, -5);
+          break;
+        case 'x': //stop movement
+          move(msg, 0, 0, 0, 0, 0, 0);
+          break;
       }
     return;
   }
+
+    void ReverseFromBoundry(int currentDroneCase, geometry_msgs::Twist msg){
+      move(msg, 0, -5, 0, 0, 0, 0); // ensure the drone is initially stationary
+      if (currentDroneCase == 1){
+        std::cout << "[!WARNING!] X-Facing Boundry Encountered! Moving BACKWARDS for 1 second..." << std::endl;
+        move(msg,-5, 0, 0, 0, 0, 0);
+        ros::Duration(1).sleep();
+      }
+      if (currentDroneCase == 2){
+        std::cout << "[!WARNING!] NEG X-Facing Boundry Encountered! Moving FORWARDS for 1 second..." << std::endl;
+        move(msg, 5, 0, 0, 0, 0, 0);
+        ros::Duration(1).sleep();
+      }
+      if (currentDroneCase == 3){
+        std::cout << "[!WARNING!] Y-Facing Boundry Encountered! Moving RIGHT for 1 second..." << std::endl;
+        move(msg, 0, -5, 0, 0, 0, 0);
+        ros::Duration(1).sleep();
+      }
+      if (currentDroneCase == 4){
+        std::cout << "[!WARNING!] NEG Y-Facing Boundry Encountered! Moving RIGHT for 1 second..." << std::endl;
+        move(msg, 0, 5, 0, 0, 0, 0);
+        ros::Duration(1).sleep();
+      }
+      if (currentDroneCase == 5){
+        std::cout << "[!WARNING!] Z-Facing Boundry Encountered! Moving DOWNWARDS for 1 second..." << std::endl;
+        move(msg, 5, 0, -5, 0, 0, 0);
+        ros::Duration(1).sleep();
+      }
+      std::cout << "Manuver Completed. Awaiting next Command." << std::endl;
+
+      move(msg, 0, 0, 0, 0, 0, 0); // one second has elapsed, halt the drone
+      
+    }
 
   /**
     * @desc Compares current position compared to the nearest physical object. If object is 
     *     within a certain distance, the drone automatically halts all movement
     * @return bool - success or failure
   */
-  bool VerifySafePosition(){
+  int VerifySafePosition(float xP, float yP, float zP){
    // ROS_INFO("x: %f", xPos);
-    if((xPos > 100) || (xPos < (-100))){
-      return false;
+    if(xP > 10){ // drone is too far forward
+     
+      return 1;
     }
-    else if((yPos > 100) || (yPos < (-100))){
-      return false;
+    
+    else if (xP < -10){ // drone is too far backwards
+      return 2;
     }
-    else if((zPos > 100) || (zPos < (-100))){
-      return false;
+    
+    else if(yP > 10){ // drone is too far to the left
+      return 3;
+    } 
+    
+    else if (yP < -10){ // drone is too far to the right
+      return 4;
     }
+
     else{
-      return true;
+      return 0;
     }
   }
 
@@ -262,7 +317,6 @@ int main(int argc, char** argv)
 {
   ros::init(argc, argv, "manual_move");
   ManualMovement manmove;
-  manmove.Keyboard();
   ros::spin();
   return 0;
 }
