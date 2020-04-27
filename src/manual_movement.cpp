@@ -24,6 +24,8 @@
 #include "std_msgs/Empty.h"
 #include <nav_msgs/Odometry.h>
 #include "fcntl.h"
+#include <math.h>
+#include "std_msgs/Float32.h"
 
 class ManualMovement{
 
@@ -36,6 +38,7 @@ public:
   ros::Publisher landingPublisher;
 
   ros::Subscriber currentPosSub;
+  ros::Subscriber minimumDistanceSub;
 
   struct termios cooked, raw;
 
@@ -43,6 +46,14 @@ public:
   float xPos = 0.0f;
   float yPos = 0.0f;
   float zPos = 0.0f;
+  float lastXpos = 0.0f;
+  float lastYpos = 0.0f;
+  float lastZpos = 0.0f;
+  float Xdir = 0.0f;
+  float Ydir = 0.0f;
+  float Zdir = 0.0f;
+
+  float currentmin;
 
   ros::Rate loop_rate = ros::Rate(30);
   
@@ -61,7 +72,12 @@ public:
       landingPublisher = nodeHandler.advertise<std_msgs::Empty>("/ardrone/land", 1);
       // topic used to get drone's current position
       currentPosSub = nodeHandler.subscribe("/ground_truth/state", 100, &ManualMovement::posChecker, this);
+      minimumDistanceSub = nodeHandler.subscribe("/minimum_distance", 100, &ManualMovement::getMin, this);
     }
+
+  void getMin(const std_msgs::Float32& msg){
+    currentmin = msg.data;
+  }
 
   /**
     * @desc moves the drone's position in the environment. It starts by checking the drone is in a safe position, then 
@@ -77,10 +93,24 @@ public:
     xPos = msg->pose.pose.position.x;
     yPos = msg->pose.pose.position.y;
     zPos = msg->pose.pose.position.z;
-    std::cout << "POS VALUES-- X: " << xPos << " Y: " << yPos << " Z: " << zPos << std::endl;
+    Xdir = (xPos - lastXpos) * 1;
+    Ydir = (yPos - lastYpos) * 1;
+    Zdir = (zPos - lastZpos) * 1;
+    lastXpos = xPos;
+    lastYpos = yPos;
+    lastZpos = zPos;
+
+    float directionInRads = atan2(Ydir, Xdir);
+    float directionInDegrees = (directionInRads * 180) / 3.1415;
+
+    // std::cout << "Dir VALUES-- X: " << Xdir << " Y: " << Ydir << " Z: " << Zdir << std::endl;
+   // std::cout << "Degree is: " << directionInDegrees << std::endl;
 
     // using current drone position, verify that drone is still within its allowed flyable boundry
     int currentDroneState = VerifySafePosition(xPos, yPos, zPos);
+    if(currentmin < 0.1){
+      currentDroneState = 1;
+    }
     if(currentDroneState != 0){ // if VerifySafePosition returns a value, this means the drone has crossed a boundry!
       // drone is in an unsafe position! Halt all current movement and call ReverseFromBoundry
       move(Tmsg, 0, 0, 0, 0, 0, 0);
@@ -103,8 +133,7 @@ public:
       flags |= O_NONBLOCK;          /* turn off blocking flag */
       fcntl(0, F_SETFL, flags);         /* set up non-blocking read */
       if(read(0, &key, 1) < 0){ // take next incoming input
-        perror("Unable to recieve input");
-        exit(-1);
+
       }
       //if a key was successfully recorded, call Keyboard()
       else{
@@ -112,7 +141,16 @@ public:
       }
     }
   }
+  /*
+  get drones x and z positions to get the horizontal direction of the drone and get velocity from there
+    get that from the nav data or ground truth topic
+  get the orientation of the lidar
+    have dot product between angle of lidar and direction of drone to be zero 
+    that way lidar is directed where drone is flying
+  
+  */
 
+//
 
   /**
     * @desc sets the drone's linear and angular velocity and publishes it
@@ -211,28 +249,28 @@ public:
           LiftAndLandProcedure(false, Lmsg); //set land command
           break;
         case 'w': //forward
-          move(msg, 5, 0, 0, 0, 0, 0);
+          move(msg, 7, 0, 0, 0, 0, 0);
           break;
         case 's': //backward
-          move(msg, -5, 0, 0, 0, 0, 0);
+          move(msg, -7, 0, 0, 0, 0, 0);
           break;
         case 'a': //left
-          move(msg, 0, 5, 0, 0, 0, 0);
+          move(msg, 0, 7, 0, 0, 0, 0);
           break;
         case 'd': //right
-          move(msg, 0, -5, 0, 0, 0, 0);
+          move(msg, 0, -7, 0, 0, 0, 0);
           break;
         case 'r': //elevate
-          move(msg, 0, 0, 5, 0, 0, 0);
+          move(msg, 0, 0, 7, 0, 0, 0);
           break;
         case 'f': //decend
-          move(msg, 0, 0, -5, 0, 0, 0);
+          move(msg, 0, 0, -7, 0, 0, 0);
           break;
         case 'q': //rotate left
-          move(msg, 0, 0, 0, 0, 0, 5);
+          move(msg, 0, 0, 0, 0, 0, 7);
           break;
         case 'e': // rotate right:
-          move(msg, 0, 0, 0, 0, 0, -5);
+          move(msg, 0, 0, 0, 0, 0, -7);
           break;
         case 'x': //stop movement
           move(msg, 0, 0, 0, 0, 0, 0);
@@ -265,7 +303,12 @@ public:
       }
       if (currentDroneCase == 5){
         std::cout << "[!WARNING!] Z-Facing Boundry Encountered! Moving DOWNWARDS for 1 second..." << std::endl;
-        move(msg, 5, 0, -5, 0, 0, 0);
+        move(msg, 0, 0, -5, 0, 0, 0);
+        ros::Duration(1).sleep();
+      }
+      if (currentDroneCase == 6){
+        std::cout << "[!WARNING!] X-Facing Object Encountered! Moving BACKWARDS for 0.5 seconds..." << std::endl;
+        move(msg, 0, -5, 0, 0, 0, 0);
         ros::Duration(1).sleep();
       }
       std::cout << "Manuver Completed. Awaiting next Command." << std::endl;
