@@ -14,12 +14,14 @@ class WorldViewInterpreter{
 
   std::vector<geometry_msgs::Point32> pointCloud;
   sensor_msgs::PointCloud rosPointCloud;
+  std_msgs::Float32 minDist; //court
 
   ros::NodeHandle nodeHandle;
   ros::Subscriber laserSub;
   ros::Subscriber lidarOrientationSub;
   ros::Subscriber navDataSub;
   ros::Publisher pointCloudPub;
+  ros::Publisher minimumDistancePub; //court
   ros::Rate loop_rate = ros::Rate(30);
 
   octomap::OcTree ocTree = octomap::OcTree(.1); // create ocTree with resolution .1
@@ -44,6 +46,7 @@ class WorldViewInterpreter{
 	  
     // publish point cloud
     pointCloudPub = nodeHandle.advertise<sensor_msgs::PointCloud>("/point_cloud", 1);
+    minimumDistancePub = nodeHandle.advertise<std_msgs::Float32>("/minimum_distance", 100);
   }
 
   // callback function for laser scan subscriber
@@ -56,7 +59,7 @@ class WorldViewInterpreter{
 	      return;
 
     int numLasers = (msg->angle_max - msg->angle_min) / msg->angle_increment;
-    std::cout << "numLasers: " << numLasers << std::endl;
+    //std::cout << "numLasers: " << numLasers << std::endl;
     geometry_msgs::Point32 point;
 
     float distance;
@@ -69,6 +72,9 @@ class WorldViewInterpreter{
     for(int i = 0; i < 64; i++){
       // calculate parameters of laser 
       distance = msg->ranges[i];
+      if((distance < minDist.data) && (distance != 0)){ // court
+        minDist.data = distance;
+      }
       horizontalAngle = this->orientation;
       verticalAngle= (1.5708 - (msg->angle_min + (i * msg->angle_increment)) + 0.785398);
 
@@ -81,6 +87,11 @@ class WorldViewInterpreter{
       
       ocPointCloud.push_back(point.x, point.y, point.z); // add
     }
+    //std::cout << "MINIMUM DISTANCE IS " <<  minDist.data << std::endl;
+    minimumDistancePub.publish(minDist);
+    loop_rate.sleep();
+
+    minDist.data = 20;
 
     ocTree.insertPointCloud(ocPointCloud, this->sensorOrigin); // update ocTree
     
