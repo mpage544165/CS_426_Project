@@ -109,7 +109,7 @@ public:
     // using current drone position, verify that drone is still within its allowed flyable boundry
     int currentDroneState = VerifySafePosition(xPos, yPos, zPos);
     if(currentmin < 0.1){
-      currentDroneState = 1;
+     // currentDroneState = 1;
     }
     if(currentDroneState != 0){ // if VerifySafePosition returns a value, this means the drone has crossed a boundry!
       // drone is in an unsafe position! Halt all current movement and call ReverseFromBoundry
