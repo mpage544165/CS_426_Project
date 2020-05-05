@@ -1,4 +1,4 @@
-// This class handles everything to do with manual movement and keyboard input
+// The purpose of this class is to handle keyboard input, drone movement, and safety checking features. 
 // Written by Courtney Palmer
 // Started 2/15/20
 
@@ -8,12 +8,11 @@
       cd catkin_ws/catkin_ws_AR
       source /opt/ros/kinetic/setup.bash && source devel/setup.bash && catkin_make && roscore
 
-    Terminal 2: Opening up Gazebo
-        source /opt/ros/kinetic/setup.bash && source devel/setup.bash && roslaunch cvg_sim_gazebo ardrone_box.launch
+    Terminal 2: Running Manual Movement alone
+        source /opt/ros/kinetic/setup.bash && source devel/setup.bash && roslaunch roslaunch manual_node
     
-    Terminal 3: Running the autonomy node
-        source /opt/ros/kinetic/setup.bash && source devel/setup.bash && rosrun ardrone_autonomy manual_node
-
+   Terminal 2: ALTERNATIVE: Run the complete project with a launch file
+      	source /opt/ros/kinetic/setup.bash && source devel/setup.bash && roslaunch cvg_sim_gazebo ardrone_cave.launch 
 */
 
 #include <ros/ros.h>
@@ -31,7 +30,6 @@ class ManualMovement{
 
 public:
   ros::NodeHandle nodeHandler;
-  ros::Subscriber movementSub;
 
   ros::Publisher velocityPublisher;
   ros::Publisher liftoffPublisher;
@@ -46,14 +44,28 @@ public:
   float xPos = 0.0f;
   float yPos = 0.0f;
   float zPos = 0.0f;
+  //this is the last recorded positin of the drone (recorded from the last loop)
   float lastXpos = 0.0f;
   float lastYpos = 0.0f;
   float lastZpos = 0.0f;
+  //This is the drone's x y z direction
+  //this is calculated by taking the difference of the last xyz position and the current xyz position
   float Xdir = 0.0f;
   float Ydir = 0.0f;
   float Zdir = 0.0f;
 
+  //this represents the boundry lines that a drone is not allowed to cross
+  float xNegBound = -10;
+  float xPosBound = 10;
+  float yPosBound = 10;
+  float yNegBound = -10;
+
+  //recorded minimum distance from LIDAR data
   float currentmin;
+
+  //records whether drone is flying or not
+  //this is used to ignore commands when drone is landed
+  bool isFlying = false;
 
   ros::Rate loop_rate = ros::Rate(30);
   
@@ -72,12 +84,19 @@ public:
       landingPublisher = nodeHandler.advertise<std_msgs::Empty>("/ardrone/land", 1);
       // topic used to get drone's current position
       currentPosSub = nodeHandler.subscribe("/ground_truth/state", 100, &ManualMovement::posChecker, this);
+      //this topic is used to get the minimum distance from the minimum_distance ROS topic
       minimumDistanceSub = nodeHandler.subscribe("/minimum_distance", 100, &ManualMovement::getMin, this);
     }
 
-  void getMin(const std_msgs::Float32& msg){
-    currentmin = msg.data;
-  }
+  /**
+    * @desc records the minimum distance from the given LIDAR data
+    * @param std_msgs::Float32 msg: this is the message type used to locate relavent data
+    *     from the minimum_distance ROS topic
+    * @return void
+  */
+    void getMin(const std_msgs::Float32& msg){
+      currentmin = msg.data;
+    }
 
   /**
     * @desc moves the drone's position in the environment. It starts by checking the drone is in a safe position, then 
@@ -93,64 +112,82 @@ public:
     xPos = msg->pose.pose.position.x;
     yPos = msg->pose.pose.position.y;
     zPos = msg->pose.pose.position.z;
-    Xdir = (xPos - lastXpos) * 1;
-    Ydir = (yPos - lastYpos) * 1;
-    Zdir = (zPos - lastZpos) * 1;
+    
+    // NOTE uncomment out the following function if identifying the drone's direction is necessary
+    //getCurrentDirection();
+
+
+    // using current drone position, verify that drone is still within its allowed flyable boundry
+    // currentDroneState will record if the drone has crossed a specific boundry (if any)
+    int currentDroneState = VerifySafePosition(xPos, yPos, zPos);
+
+    // next, we check if the distance calculated from LIDAR data is smaller than 0.9 units
+    // if so, then we are too close to an object and must back away
+    if((currentmin < 0.9) && isFlying){
+     currentDroneState = 6;    
+    } 
+
+    // if the current drone state has been set to an int value, then the drone is in an unsafe position! Either it
+        // has crossed a boundry or it has gone too close to an object. Either way, we will halt all current movement
+        // then call Reverse from boundry to 'rescue it'
+    if(currentDroneState != 0){ 
+      move(Tmsg, 0, 0, 0, 0, 0, 0);
+      ReverseFromBoundry(currentDroneState, Tmsg);
+      currentDroneState = 0;
+    }
+    // Otherwise, the drone is in a safe position and we are free to search for key presses
+    else{
+      if(PrepTerminal()){ // check that terminal is set in raw mode
+        std::cout << "Ready to Recieve Input..." << std::endl;
+        std::cout << "Press 'h' for help" << std::endl;
+      }
+
+      else{ // otherwise, something went wrong with terminal settings and we must exit
+        perror("Unable to prepare the terminal for input");
+        exit(-1);
+      }
+      char key; // hold the current key press
+      
+      // Normally, the command ' read(0, &key, 1) ' will force our function to halt here until keyboard input
+          // is detected. This was an issue because our callback function 'posChecker' must be continously looped 
+          // the following three lines disables the halting functionality so that 'posChecker' can loop
+      int flags = fcntl(0, F_GETFL, 0); /* get current file status flags */
+      flags |= O_NONBLOCK;          /* turn off blocking flag */
+      fcntl(0, F_SETFL, flags);         /* set up non-blocking read */
+      
+      // check if keyboard input was detected or not
+      if(read(0, &key, 1) < 0){ 
+
+      }
+      //if a key was successfully recorded, call Keyboard()
+      else{
+        Keyboard(key, Tmsg, Lmsg);
+      }
+    }
+    currentDroneState = 0;
+  }
+
+  /**
+    * @desc calculated the drone's current direction by taking the difference between the current xyz pos and the last
+    *     recorded xyz pos. 
+    * @return void
+  */
+  float getCurrentDirection(){
+    Xdir = (xPos - lastXpos);
+    Ydir = (yPos - lastYpos);
+    Zdir = (zPos - lastZpos);
+    // std::cout << "Direction Values X: " << Xdir << " Y: " << Ydir << " Z: " << Zdir << std::endl;
     lastXpos = xPos;
     lastYpos = yPos;
     lastZpos = zPos;
 
     float directionInRads = atan2(Ydir, Xdir);
     float directionInDegrees = (directionInRads * 180) / 3.1415;
+    // std::cout << "Degree is: " << directionInDegrees << std::endl;
 
-    // std::cout << "Dir VALUES-- X: " << Xdir << " Y: " << Ydir << " Z: " << Zdir << std::endl;
-   // std::cout << "Degree is: " << directionInDegrees << std::endl;
+    return directionInDegrees;
 
-    // using current drone position, verify that drone is still within its allowed flyable boundry
-    int currentDroneState = VerifySafePosition(xPos, yPos, zPos);
-    if(currentmin < 0.1){
-     // currentDroneState = 1;
-    }
-    if(currentDroneState != 0){ // if VerifySafePosition returns a value, this means the drone has crossed a boundry!
-      // drone is in an unsafe position! Halt all current movement and call ReverseFromBoundry
-      move(Tmsg, 0, 0, 0, 0, 0, 0);
-      ReverseFromBoundry(currentDroneState, Tmsg);
-    }
-
-    //otherwise, the drone is in a safe position and we are free to search for key presses
-    else{
-      if(PrepTerminal()){ // if terminal is set in raw mode
-        std::cout << "Ready to Recieve Input..." << std::endl;
-        std::cout << "Press 'h' for help" << std::endl;
-      }
-
-      else{ // terminal was unable to be set for raw mode
-        perror("Unable to prepare the terminal for input");
-        exit(-1);
-      }
-      char key; // hold the current key press
-      int flags = fcntl(0, F_GETFL, 0); /* get current file status flags */
-      flags |= O_NONBLOCK;          /* turn off blocking flag */
-      fcntl(0, F_SETFL, flags);         /* set up non-blocking read */
-      if(read(0, &key, 1) < 0){ // take next incoming input
-
-      }
-      //if a key was successfully recorded, call Keyboard()
-      else{
-        Keyboard(key, xPos, yPos, zPos, Tmsg, Lmsg);
-      }
-    }
   }
-  /*
-  get drones x and z positions to get the horizontal direction of the drone and get velocity from there
-    get that from the nav data or ground truth topic
-  get the orientation of the lidar
-    have dot product between angle of lidar and direction of drone to be zero 
-    that way lidar is directed where drone is flying
-  
-  */
-
-//
 
   /**
     * @desc sets the drone's linear and angular velocity and publishes it
@@ -162,6 +199,7 @@ public:
   */
     void move(geometry_msgs::Twist msg, int Lx, int Ly, int Lz, int Ax, int Ay, int Az){
       
+      //set linear and angular velocity
       msg.linear.x = Lx;
       msg.linear.y = Ly;
       msg.linear.z = Lz;
@@ -169,9 +207,7 @@ public:
       msg.angular.y = Ay;
       msg.angular.z = Az;
 
-      // TODO
-        // set a range of velocity speeds between a minimum and ma
-
+      //publish new value and loop to ensure that the change was made
       velocityPublisher.publish(msg);
       loop_rate.sleep();
     }
@@ -218,11 +254,13 @@ public:
     }
 
     /**
-      * @desc opens a modal window to display a message
-      * @param string $msg - the message to be displayed
-      * @return bool - success or failure
+      * @desc this function interprets a given keyboard input and calls the appropriate function
+      * @param char key: represents the current recorded key press
+      * @param geometry::twist msg: this message will carry a movement-type command
+      * @param std_msgs::Empty Lmsg: this message will carry a Lift/Land type command
+      * @return void
     */
-    void Keyboard(char key, float xpos, float ypos, float zpos, geometry_msgs::Twist msg, std_msgs::Empty Lmsg){
+    void Keyboard(char key, geometry_msgs::Twist msg, std_msgs::Empty Lmsg){
       switch(key){
         case 'h': // Help
           std::cout << " ==== Control Scheme ==== " << std::endl;
@@ -243,34 +281,36 @@ public:
           break;
 
         case 'l': // lisftoff
+          isFlying = true;
           LiftAndLandProcedure(true, Lmsg); //set liftoff command
           break;
         case 'k': // land
+          isFlying = false;
           LiftAndLandProcedure(false, Lmsg); //set land command
           break;
         case 'w': //forward
-          move(msg, 7, 0, 0, 0, 0, 0);
+          move(msg, 1, 0, 0, 0, 0, 0);
           break;
         case 's': //backward
-          move(msg, -7, 0, 0, 0, 0, 0);
+          move(msg, -3, 0, 0, 0, 0, 0);
           break;
         case 'a': //left
-          move(msg, 0, 7, 0, 0, 0, 0);
+          move(msg, 0, 3, 0, 0, 0, 0);
           break;
         case 'd': //right
-          move(msg, 0, -7, 0, 0, 0, 0);
+          move(msg, 0, -3, 0, 0, 0, 0);
           break;
         case 'r': //elevate
-          move(msg, 0, 0, 7, 0, 0, 0);
+          move(msg, 0, 0, 3, 0, 0, 0);
           break;
         case 'f': //decend
-          move(msg, 0, 0, -7, 0, 0, 0);
+          move(msg, 0, 0, -3, 0, 0, 0);
           break;
         case 'q': //rotate left
-          move(msg, 0, 0, 0, 0, 0, 7);
+          move(msg, 0, 0, 0, 0, 0, 2);
           break;
         case 'e': // rotate right:
-          move(msg, 0, 0, 0, 0, 0, -7);
+          move(msg, 0, 0, 0, 0, 0, -2);
           break;
         case 'x': //stop movement
           move(msg, 0, 0, 0, 0, 0, 0);
@@ -279,9 +319,19 @@ public:
     return;
   }
 
+    /**
+      * @desc this function will interpret the drones flight 'case' and react by moving the drone
+      *     away from a danger if a danger was encountered
+      * @param int currentDroneCase: This signifies which state the drone is currently in
+      * @param geometry::twist msg: this message will carry a movement-type command
+      * @return void
+    */
     void ReverseFromBoundry(int currentDroneCase, geometry_msgs::Twist msg){
-      move(msg, 0, -5, 0, 0, 0, 0); // ensure the drone is initially stationary
-      if (currentDroneCase == 1){
+      // first we ensure that the drone is initially stationary
+      move(msg, 0, 0, 0, 0, 0, 0); 
+      // move(msg, 0, -5, 0, 0, 0, 0);
+
+      if (currentDroneCase == 1){ 
         std::cout << "[!WARNING!] X-Facing Boundry Encountered! Moving BACKWARDS for 1 second..." << std::endl;
         move(msg,-5, 0, 0, 0, 0, 0);
         ros::Duration(1).sleep();
@@ -297,7 +347,7 @@ public:
         ros::Duration(1).sleep();
       }
       if (currentDroneCase == 4){
-        std::cout << "[!WARNING!] NEG Y-Facing Boundry Encountered! Moving RIGHT for 1 second..." << std::endl;
+        std::cout << "[!WARNING!] NEG Y-Facing Boundry Encountered! Moving LEFT for 1 second..." << std::endl;
         move(msg, 0, 5, 0, 0, 0, 0);
         ros::Duration(1).sleep();
       }
@@ -307,51 +357,46 @@ public:
         ros::Duration(1).sleep();
       }
       if (currentDroneCase == 6){
-        std::cout << "[!WARNING!] X-Facing Object Encountered! Moving BACKWARDS for 0.5 seconds..." << std::endl;
-        move(msg, 0, -5, 0, 0, 0, 0);
-        ros::Duration(1).sleep();
+        std::cout << "[!WARNING!] X-Facing Object Encountered! Moving BACKWARDS for 2 seconds..." << std::endl;
+        move(msg, -3, 0, 0, 0, 0, 0);
+        ros::Duration(2).sleep();
       }
       std::cout << "Manuver Completed. Awaiting next Command." << std::endl;
 
-      move(msg, 0, 0, 0, 0, 0, 0); // one second has elapsed, halt the drone
+      // one second has elapsed, halt the drone
+      move(msg, 0, 0, 0, 0, 0, 0); 
+      currentDroneCase = 0;
       
     }
 
   /**
     * @desc Compares current position compared to the nearest physical object. If object is 
     *     within a certain distance, the drone automatically halts all movement
+    * @param float xP, xP, zP represents the current xyz position of the drone
     * @return bool - success or failure
   */
   int VerifySafePosition(float xP, float yP, float zP){
    // ROS_INFO("x: %f", xPos);
-    if(xP > 10){ // drone is too far forward
+    if(xP > xPosBound){ // drone is too far forward
      
       return 1;
     }
     
-    else if (xP < -10){ // drone is too far backwards
+    else if (xP < xNegBound){ // drone is too far backwards
       return 2;
     }
     
-    else if(yP > 10){ // drone is too far to the left
+    else if(yP > yPosBound){ // drone is too far to the left
       return 3;
     } 
     
-    else if (yP < -10){ // drone is too far to the right
+    else if (yP < yNegBound){ // drone is too far to the right
       return 4;
     }
 
     else{
       return 0;
     }
-  }
-
-  /**
-    * @desc Procedure to halt all movement
-    * @return void
-  */
-  bool EmergencyHalt(){
-    //TODO
   }
   
 };
