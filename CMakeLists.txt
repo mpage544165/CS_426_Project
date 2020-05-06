@@ -152,6 +152,8 @@ add_executable(pose_estimator src/pose_estimator.cpp)
 
 add_executable(world_view_interpreter src/world_view_interpreter.cpp)
 
+add_executable(path_planner src/path_planner.cpp)
+
 target_link_libraries(
     ardrone_driver
     pc_ardrone
@@ -173,6 +175,8 @@ target_link_libraries(opencv_node ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 target_link_libraries(pose_estimator ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${ZBAR_LIBRARIES}zbar)
 
 target_link_libraries(world_view_interpreter ${roscpp_LIBRARIES} ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
+
+target_link_libraries(path_planner ${roscpp_LIBRARIES} ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
 
 add_dependencies(ardrone_driver ardronelib ${PROJECT_NAME}_gencpp)
 
