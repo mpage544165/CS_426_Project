@@ -146,7 +146,7 @@ add_executable(ardrone_driver ${AA_SOURCES})
 
 add_executable(manual_node src/manual_movement.cpp)
 
-add_executable(opencv_node src/image_converter.cpp)
+add_executable(opencv_node src/tracker.cpp)
 
 add_executable(pose_estimator src/pose_estimator.cpp)
 
